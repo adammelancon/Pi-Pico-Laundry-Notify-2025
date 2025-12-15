@@ -199,7 +199,7 @@ while True:
 
         if data['state'] == 'RUNNING' and silence_duration > COOLDOWN_SEC:
             print(f"--- {name} FINISHED ---")
-            send_alert(data['webhook'])
+            send_alert(data['webhook'], name)
             data['state'] = 'IDLE'
             blink(5)
 
