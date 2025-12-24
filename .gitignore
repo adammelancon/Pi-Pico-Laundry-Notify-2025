@@ -1,0 +1,18 @@
+# Credentials and sensitive information
+secrets.py
+
+# Python-specific files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Environment and Thonny-specific
+.env
+.venv
+env/
+venv/
+.thonny/
