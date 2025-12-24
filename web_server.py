@@ -2,7 +2,7 @@ import socket
 import network
 import time
 
-# This function will run on the Second Core
+# This function runs on the Second Core
 def run_server(machines_data, ip_address):
     addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
     s = socket.socket()
@@ -14,10 +14,8 @@ def run_server(machines_data, ip_address):
 
     while True:
         try:
-            # Accept new connection
             cl, addr = s.accept()
             request = cl.recv(1024)
-            # We don't really care what the request is (GET /), just serve the page
             
             # --- GENERATE HTML ---
             html = """
@@ -40,12 +38,11 @@ def run_server(machines_data, ip_address):
                 <h1>Laundry Monitor</h1>
             """
             
-            # Loop through machines to create cards
             for name, data in machines_data.items():
                 state = data['state']
                 vibe = data.get('current_vibration', 0)
+                max_vibe = data.get('max_peak', 0) # <--- Retrieve the session high
                 
-                # Calculate Duration
                 duration_str = "--:--"
                 if state == 'RUNNING':
                     elapsed = time.time() - data['start_verify_time']
@@ -58,19 +55,17 @@ def run_server(machines_data, ip_address):
                     <h2>{name}</h2>
                     <div class="status {state}">{state}</div>
                     <p>Runtime: {duration_str}</p>
-                    <p><small>Vibration Level: {vibe}</small></p>
+                    <p>Session Max: {max_vibe}</p> <p><small>Current Vibration: {vibe}</small></p>
                 </div>
                 """
 
             html += "</body></html>"
             
-            # --- SEND RESPONSE ---
             response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + html
             cl.send(response)
             cl.close()
             
         except Exception as e:
             print(f"Web Server Error: {e}")
-            # Don't crash the thread, just close connection and retry
             if 'cl' in locals():
                 cl.close()

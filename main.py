@@ -8,12 +8,6 @@ import rp2
 import secrets
 
 # ================= CONFIGURATION =================
-# Set this to TRUE to see live data in the shell
-# Set to FALSE for normal operation (Notifications enabled)
-
-# Replace the ####### with your info.
-
-# ================= CONFIGURATION =================
 CALIBRATION_MODE = False 
 
 # Pull from secrets.py
@@ -31,10 +25,10 @@ DRYER_URL  = f"http://{HA_IP}:{HA_PORT}/api/webhook/{secrets.DRYER_WEBHOOK_ID}"
 WASHER_CONNECTED = True
 DRYER_CONNECTED = False
 
-# SENSOR SETTINGS
-THRESHOLD = 1500        # Adjust this if your machine is quieter/louder
-START_CONFIRM_SEC = 60  # Must vibrate this long to count as "Started" 60
-COOLDOWN_SEC = 300      # 5 Minutes of silence = "Finished" 300
+# SENSOR SETTINGS (Adjusted for Peak Sensing)
+THRESHOLD = 2500        # Recommended starting point for Peak sensing
+START_CONFIRM_SEC = 30  # Sustained vibration to count as "Started"
+COOLDOWN_SEC = 360      # 6 Minutes of silence = "Finished"
 FALSE_ALARM_TIME = 10   # Short bumps are ignored
 
 # ================= SETUP =================
@@ -45,21 +39,24 @@ if WASHER_CONNECTED:
     print("Initializing Washer Sensor...")
     machines['Washer'] = {
         'state': 'IDLE', 
-        'adc': ADC(27), # 32
+        'adc': ADC(27),
         'webhook': WASHER_URL, 
-        'last_vibe_time': 0, 'start_verify_time': 0, 'current_vibration': 0
-    }
-
-if DRYER_CONNECTED:
-    print("Initializing Dryer Sensor...")
-    machines['Dryer'] = {
-        'state': 'IDLE', 
-        'adc': ADC(26), # 31
-        'webhook': DRYER_URL, 
-        'last_vibe_time': 0, 'start_verify_time': 0, 'current_vibration': 0
+        'last_vibe_time': 0, 
+        'start_verify_time': 0, 
+        'current_vibration': 0,
+        'max_peak': 0  # <--- Field for tracking session high
     }
 
 # ================= FUNCTIONS =================
+def get_max_peak(adc_sensor, samples=100):
+    """Samples quickly to catch the highest vibration peak."""
+    max_val = 0
+    for _ in range(samples):
+        val = adc_sensor.read_u16()
+        if val > max_val:
+            max_val = val
+    return max_val
+
 def blink(times, speed=0.1):
     for _ in range(times):
         led.on(); time.sleep(speed)
@@ -67,143 +64,75 @@ def blink(times, speed=0.1):
 
 def connect_wifi():
     wlan = network.WLAN(network.STA_IF)
-    
-    # 1. FORCE RESET: Turn WiFi OFF then ON to kill any stuck states
-    wlan.active(False)
-    time.sleep(0.5)
-    wlan.active(True)
-    
-    # 2. Set Country & Power Mode (Critical for Eero/Mesh)
+    wlan.active(False); time.sleep(0.5); wlan.active(True)
     rp2.country('US')
     wlan.config(pm=0xa11140)
-    
     print(f"Connecting to {SSID}...")
     wlan.connect(SSID, PASSWORD)
     
-    # 3. The "Status" Loop
     max_wait = 20
     while max_wait > 0:
-        status = wlan.status()
-        
-        # Status 3 means CONNECTED
-        if status == 3:
-            break
+        if wlan.status() == 3: break
+        max_wait -= 1; time.sleep(1)
             
-        if status == -3:
-            print("ERR: Bad Auth / Password Rejected")
-            return None
-            
-        if status < 0:
-            print(f"ERR: WiFi Status {status}")
-            return None
-            
-        # print(f"Status: {status} (Waiting...)") # Uncomment for deep debug
-        max_wait -= 1
-        time.sleep(1)
-            
-    # Final Check
     if wlan.status() == 3:
         ip = wlan.ifconfig()[0]
         print(f"Connected! IP: {ip}")
-        blink(3)
-        return ip
+        blink(3); return ip
     else:
         print("\n!!! WIFI CONNECTION FAILED !!!")
-        blink(10, 0.05)
-        return None
+        blink(10, 0.05); return None
 
 def send_alert(ha_url, machine_name):
-    # In CALIBRATION_MODE, skip everything
-    if CALIBRATION_MODE:
-        print(f"[DEBUG] Would alert HA and Ntfy for {machine_name}")
-        return
-
-    # 1. Trigger Home Assistant (The Voice Announcement)
+    if CALIBRATION_MODE: return
+    try: urequests.post(ha_url)
+    except Exception as e: print(f"HA Failed: {e}")
     try:
-        print(f"Triggering Home Assistant...")
-        urequests.post(ha_url)
-    except Exception as e:
-        print(f"HA Failed: {e}")
-
-    # 2. Trigger Ntfy.sh (The Phone Notification)
-    try:
-        print(f"Sending Ntfy Push...")
         msg = f"{machine_name} has finished!"
         urequests.post(NTFY_URL, data=msg.encode('utf-8'))
-    except Exception as e:
-        print(f"Ntfy Failed: {e}")
-
-def get_average_reading(adc_sensor, samples=30):
-    total = 0
-    for _ in range(samples):
-        total += adc_sensor.read_u16()
-        time.sleep(0.001)
-    return total // samples
+    except Exception as e: print(f"Ntfy Failed: {e}")
 
 # ================= MAIN LOOP =================
-
-# 1. Connect to WiFi
 ip_address = connect_wifi()
-
-# 2. Start Web Server (Only if WiFi succeeded)
 if ip_address:
     try:
-        print("Starting Web Server Thread...")
         _thread.start_new_thread(web_server.run_server, (machines, ip_address))
-    except Exception as e:
-        print(f"Failed to start web server: {e}")
-
-# 3. Mode Announcement
-if CALIBRATION_MODE:
-    print("\n!!! CALIBRATION MODE ACTIVE !!!")
-    print(f"Threshold is set to: {THRESHOLD}")
-    print("Watching sensors... (Webhooks DISABLED)\n")
-else:
-    print("System Armed (Production Mode)...")
+    except Exception as e: print(f"Failed to start web server: {e}")
 
 while True:
     current_time = time.time()
-    
     for name, data in machines.items():
-        vibration = get_average_reading(data['adc'])
+        vibration = get_max_peak(data['adc'])
         data['current_vibration'] = vibration 
         
-        # --- DEBUG PRINTING (Only if Calibration Mode is ON) ---
-        if CALIBRATION_MODE:
-            bar_len = vibration // 200
-            bar = "|" * bar_len
-            trigger_mark = ">> ACTIVE" if vibration > THRESHOLD else ""
-            print(f"[{name}] Val: {vibration:5} / Thresh: {THRESHOLD}  {bar} {trigger_mark}")
+        # Track the highest peak seen in this session
+        if vibration > data['max_peak']:
+            data['max_peak'] = vibration
 
-        # --- LOGIC ---
+        if CALIBRATION_MODE:
+            print(f"[{name}] Peak: {vibration:5} / Session Max: {data['max_peak']} / Thresh: {THRESHOLD}")
+
+        # LOGIC
         if vibration > THRESHOLD:
             data['last_vibe_time'] = current_time 
-            
             if data['state'] == 'IDLE':
-                if not CALIBRATION_MODE: print(f"[{name}] Movement detected. Verifying...")
                 data['state'] = 'VERIFYING'
                 data['start_verify_time'] = current_time
-            
             elif data['state'] == 'VERIFYING':
-                duration = current_time - data['start_verify_time']
-                if duration > START_CONFIRM_SEC:
-                    if not CALIBRATION_MODE: print(f"--- {name} CONFIRMED STARTED ---")
+                if (current_time - data['start_verify_time']) > START_CONFIRM_SEC:
                     data['state'] = 'RUNNING'
                     data['start_verify_time'] = current_time 
                     blink(2)
 
         silence_duration = current_time - data['last_vibe_time']
-        
         if data['state'] == 'VERIFYING' and silence_duration > FALSE_ALARM_TIME:
-            if not CALIBRATION_MODE: print(f"[{name}] Just a bump. Resetting to IDLE.")
             data['state'] = 'IDLE'
 
         if data['state'] == 'RUNNING' and silence_duration > COOLDOWN_SEC:
             print(f"--- {name} FINISHED ---")
             send_alert(data['webhook'], name)
             data['state'] = 'IDLE'
+            data['max_peak'] = 0  # Reset max peak for next load
             blink(5)
 
-    # If calibrating, run faster (0.2s) to catch spikes. 
-    # If production, run slower (1.0s) to save power/cpu.
-    time.sleep(0.2 if CALIBRATION_MODE else 1)
+    time.sleep(0.1 if CALIBRATION_MODE else 1)
