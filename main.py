@@ -83,12 +83,18 @@ def connect_wifi():
         print("\n!!! WIFI CONNECTION FAILED !!!")
         blink(10, 0.05); return None
 
-def send_alert(ha_url, machine_name):
+def send_alert(ha_url, machine_name, status="finished"):
     if CALIBRATION_MODE: return
-    try: urequests.post(ha_url)
-    except Exception as e: print(f"HA Failed: {e}")
+    
+    # We only trigger the HA webhook for the "finished" alert to avoid 
+    # unwanted voice announcements while you are loading the machine.
+    if status == "finished":
+        try: urequests.post(ha_url)
+        except Exception as e: print(f"HA Failed: {e}")
+    
+    # Push notification to your phone via Ntfy
     try:
-        msg = f"{machine_name} has finished!"
+        msg = f"{machine_name} has {status}!"
         urequests.post(NTFY_URL, data=msg.encode('utf-8'))
     except Exception as e: print(f"Ntfy Failed: {e}")
 
@@ -121,7 +127,8 @@ while True:
             elif data['state'] == 'VERIFYING':
                 if (current_time - data['start_verify_time']) > START_CONFIRM_SEC:
                     data['state'] = 'RUNNING'
-                    data['start_verify_time'] = current_time 
+                    data['start_verify_time'] = current_time
+                    send_alert(data['webhook'], name, status="started")
                     blink(2)
 
         silence_duration = current_time - data['last_vibe_time']
@@ -130,7 +137,7 @@ while True:
 
         if data['state'] == 'RUNNING' and silence_duration > COOLDOWN_SEC:
             print(f"--- {name} FINISHED ---")
-            send_alert(data['webhook'], name)
+            send_alert(data['webhook'], name, status="finished")
             data['state'] = 'IDLE'
             data['max_peak'] = 0  # Reset max peak for next load
             blink(5)
