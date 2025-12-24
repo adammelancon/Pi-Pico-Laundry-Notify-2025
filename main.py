@@ -5,6 +5,7 @@ import _thread
 import web_server
 from machine import ADC, Pin
 import rp2
+import secrets
 
 # ================= CONFIGURATION =================
 # Set this to TRUE to see live data in the shell
@@ -12,19 +13,19 @@ import rp2
 
 # Replace the ####### with your info.
 
+# ================= CONFIGURATION =================
 CALIBRATION_MODE = False 
 
-SSID = "######"
-PASSWORD = "######"
+# Pull from secrets.py
+SSID = secrets.WIFI_SSID
+PASSWORD = secrets.WIFI_PASSWORD
+NTFY_URL = secrets.NTFY_URL
 
-NTFY_URL = "https://ntfy.sh/######"
-
-# HOME ASSISTANT CONFIGURATION
-HA_IP = "192.168.1.###"
-HA_PORT = "###"
-
-WASHER_URL = f"http://{HA_IP}:{HA_PORT}/api/webhook/######"
-DRYER_URL  = f"http://{HA_IP}:{HA_PORT}/api/webhook/######"
+# Rebuild URLs using secrets
+HA_IP = secrets.HA_IP
+HA_PORT = secrets.HA_PORT
+WASHER_URL = f"http://{HA_IP}:{HA_PORT}/api/webhook/{secrets.WASHER_WEBHOOK_ID}"
+DRYER_URL  = f"http://{HA_IP}:{HA_PORT}/api/webhook/{secrets.DRYER_WEBHOOK_ID}"
 
 # TOGGLES: Enable/Disable sensors here
 WASHER_CONNECTED = True

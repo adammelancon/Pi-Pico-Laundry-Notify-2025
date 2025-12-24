@@ -43,8 +43,10 @@ To get clean readings and protect your Pico, use this two-resistor setup:
 | **Dryer Sensor** | ADC 0 (GP26) | Pin 31 |
 | **LED** (Optional) | Onboard LED | - |
 
-## ⚙️ Configuration
-Open `main.py` and edit the **Configuration** section at the top:
+## 🛠 Setup
+1. Copy `secrets.py.example` to a new file named `secrets.py`.
+2. Open `secrets.py` and enter your WiFi credentials and Home Assistant details.
+3. The `.gitignore` is already set up to ensure your `secrets.py` is never uploaded to GitHub.
 
 
 ## 📊 Calibration
