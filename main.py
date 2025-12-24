@@ -48,7 +48,7 @@ if WASHER_CONNECTED:
     }
 
 # ================= FUNCTIONS =================
-def get_max_peak(adc_sensor, samples=100):
+def get_max_peak(adc_sensor, samples=1000):
     """Samples quickly to catch the highest vibration peak."""
     max_val = 0
     for _ in range(samples):
